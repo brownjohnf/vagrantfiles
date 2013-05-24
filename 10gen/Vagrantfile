@@ -1,0 +1,60 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+$replica_sets = 3
+$shards = 1
+
+$init = <<SCRIPT
+SHARD=$1
+echo '--> provisioning...'
+export DEBIAN_FRONTEND=noninteractive
+echo '--> updating aptitude...'
+aptitude update
+echo '--> installing packages...'
+aptitude install -y curl htop build-essential vim screen
+SCRIPT
+
+$mongo = <<SCRIPT
+echo '--> downloading mongodb...'
+su vagrant -c 'curl http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-2.4.3.tgz > ~/mongodb-2.4.3.tgz'
+echo '--> untarring mongodb...'
+su vagrant -c 'mkdir ~/mongodb-2.4.3'
+su vagrant -c 'tar -xvf ~/mongodb-2.4.3.tgz -C ~/mongodb-2.4.3 --strip 1'
+echo '--> creating directories...'
+mkdir -p /data/db
+chown -R vagrant:vagrant /data
+echo '--> moving binaries...'
+cp /home/vagrant/mongodb-2.4.3/bin/* /usr/local/bin/
+SCRIPT
+
+$start = <<SCRIPT
+echo "--> booting server..."
+su vagrant -c "mongod --replSet $SHARD --fork"
+SCRIPT
+
+Vagrant.configure("2") do |config|
+  n = 0
+
+  $shards.times do |shard|
+    $replica_sets.times do |replica_set|
+
+      config.vm.define "mongo#{n}".to_sym do |c|
+        c.vm.box = "precise64"
+        c.vm.box_url = "http://files.vagrantup.com/precise64.box"
+        c.vm.provider :virtualbox do |v|
+          v.customize ["modifyvm", :id, "--memory", 128]
+        end
+        c.vm.network :private_network, ip: "192.168.11.0#{n + 1}"
+        c.vm.network :forwarded_port, guest: 27017, host: 27017 + n
+        c.vm.hostname = 'mongo'
+        c.vm.provision :shell do |s|
+          s.inline = $init + $mongo + $start
+          s.args = "shard#{shard}"
+        end
+      end
+
+      # set the id/port incrementer
+      n += 1
+    end
+  end
+end
