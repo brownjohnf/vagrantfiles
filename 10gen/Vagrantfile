@@ -6,30 +6,52 @@ $shards = 1
 
 $init = <<SCRIPT
 SHARD=$1
+RS=$2
+
+# exit immediately on non-zero return
+set -e
+
+# print out the commands as they run
+set -x
+
 echo '--> provisioning...'
 export DEBIAN_FRONTEND=noninteractive
-echo '--> updating aptitude...'
-aptitude update
-echo '--> installing packages...'
-aptitude install -y curl htop build-essential vim screen
+
+if which curl htop gcc vim screen > /dev/null; then
+  echo "==> Packages installed."
+else
+  echo '--> updating aptitude...'
+  aptitude update > /dev/null
+  echo '--> installing packages...'
+  aptitude install -y curl htop build-essential vim screen
+fi
+
 SCRIPT
 
 $mongo = <<SCRIPT
-echo '--> downloading mongodb...'
-su vagrant -c 'curl http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-2.4.3.tgz > ~/mongodb-2.4.3.tgz'
-echo '--> untarring mongodb...'
-su vagrant -c 'mkdir ~/mongodb-2.4.3'
-su vagrant -c 'tar -xvf ~/mongodb-2.4.3.tgz -C ~/mongodb-2.4.3 --strip 1'
-echo '--> creating directories...'
-mkdir -p /data/db
-chown -R vagrant:vagrant /data
-echo '--> moving binaries...'
-cp /home/vagrant/mongodb-2.4.3/bin/* /usr/local/bin/
+if which mongod > /dev/null; then
+  echo "==> Mongo already installed."
+else
+  echo '--> downloading mongodb...'
+  su vagrant -c 'curl http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-2.4.3.tgz > ~/mongodb-2.4.3.tgz'
+  echo '--> untarring mongodb...'
+  su vagrant -c 'mkdir ~/mongodb-2.4.3'
+  su vagrant -c 'tar -xvf ~/mongodb-2.4.3.tgz -C ~/mongodb-2.4.3 --strip 1'
+  echo '--> creating directories...'
+  mkdir -p /data/db
+  chown -R vagrant:vagrant /data
+  echo '--> moving binaries...'
+  cp /home/vagrant/mongodb-2.4.3/bin/* /usr/local/bin/
+fi
 SCRIPT
 
 $start = <<SCRIPT
-echo "--> booting server..."
-su vagrant -c "mongod --replSet $SHARD --fork"
+if (ps -efwww | grep -e [m]ongod) > /dev/null; then
+  echo "==> mongod already started."
+else
+  echo "--> booting server..."
+  su vagrant -c "mongod --replSet $SHARD --logpath $RS.log --fork"
+fi
 SCRIPT
 
 Vagrant.configure("2") do |config|
